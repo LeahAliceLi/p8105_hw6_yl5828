@@ -1,0 +1,9 @@
+---
+title: "p8105_hw6_yl5828"
+author: "Leah Li"
+date: '`r format(Sys.time(), "%Y-%m-%d")`'
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
