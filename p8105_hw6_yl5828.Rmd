@@ -7,3 +7,138 @@ editor_options:
   chunk_output_type: console
 ---
 
+
+## Problem 0
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(patchwork)
+library(rvest)
+library(broom)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+
+## Problem 1
+
+```{r read in data, message=FALSE}
+url <- "https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"
+
+homicide_data <- read_csv(url)
+```
+
+
+```{r data cleaning}
+homicide_df <- homicide_data %>%
+  mutate(city_state = paste(city, state, sep = ", ")) %>%
+  mutate(resolved = as.numeric(disposition == "Closed by arrest")) %>%
+  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")) %>%
+  filter(victim_race %in% c("White", "Black")) %>%
+  mutate(victim_age = as.numeric(victim_age)) %>%
+  filter(!is.na(victim_age)) %>%
+  mutate(
+    victim_sex = factor(victim_sex),
+    victim_race = factor(victim_race)
+  )
+```
+
+
+
+```{r logistic regression for Baltimore}
+baltimore_df <- homicide_df %>%
+  filter(city_state == "Baltimore, MD")
+
+baltimore_glm <- glm(
+  resolved ~ victim_age + victim_sex + victim_race,
+  data = baltimore_df,
+  family = binomial()
+)
+
+# Tidy the results
+baltimore_results <- baltimore_glm %>%
+  tidy() %>%
+  mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>%
+  filter(term == "victim_sexMale") %>%
+  select(term, OR, CI_lower, CI_upper)
+```
+
+Baltimore, MD Results:  
+
+For Baltimore, the adjusted odds ratio for solving homicides comparing male victims to female victims is
+`r round(baltimore_results$OR, 3)` with 95% CI: (`r round(baltimore_results$CI_lower, 3)`, `r round(baltimore_results$CI_upper, 3)`).
+
+
+
+```{r Analysis for all cities}
+city_results <- homicide_df %>%
+  nest(data = -city_state) %>%
+  mutate(
+    model = map(data, ~glm(resolved ~ victim_age + victim_sex + victim_race, data = ., family = binomial())),
+    tidied = map(model, tidy)) %>%
+  unnest(tidied) %>%
+  filter(term == "victim_sexMale") %>%
+  mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>%
+  select(city_state, OR, CI_lower, CI_upper) %>%
+  arrange(OR)
+
+city_results
+```
+
+
+```{r Create plot}
+plot <- city_results %>%
+  mutate(city_state = fct_reorder(city_state, OR)) %>%
+  ggplot(aes(x = city_state, y = OR)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.3) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", alpha = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Adjusted Odds Ratios for Solving Homicides: Male vs Female Victims",
+    subtitle = "Adjusted for victim age and race across 47 U.S. cities",
+    x = "City",
+    y = "Odds Ratio (95% CI)") +
+  theme_minimal()
+
+plot
+```
+
+
+In the plot, most cities are clustered close to 1 and most 95% CIs cross the vertical line at 1, suggesting little evidence of large, consistent differences in clearance rates by victim sex within most cities. A few cities have ORs noticeably above 1, hinting that male-victim homicides might be more likely to be solved there, but their CIs are wide, so those estimates are fairly imprecise. Overall, there isn’t a strong pattern by city.
+
+
+
+
+
+
+
+
+
+
+
+
