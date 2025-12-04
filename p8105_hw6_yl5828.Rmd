@@ -10,11 +10,13 @@ editor_options:
 
 ## Problem 0
 
-```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+```{r setup, warning=FALSE, message=FALSE}
 library(tidyverse)
 library(patchwork)
 library(rvest)
 library(broom)
+library(janitor)
+
 
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -86,7 +88,7 @@ baltimore_results <- baltimore_glm %>%
 Baltimore, MD Results:  
 
 For Baltimore, the adjusted odds ratio for solving homicides comparing male victims to female victims is
-`r round(baltimore_results$OR, 3)` with 95% CI: (`r round(baltimore_results$CI_lower, 3)`, `r round(baltimore_results$CI_upper, 3)`).
+`r round(baltimore_results$OR, 3)` with 95% CI: (**`r round(baltimore_results$CI_lower, 3)`**, **`r round(baltimore_results$CI_upper, 3)`**).
 
 
 
@@ -133,10 +135,79 @@ In the plot, most cities are clustered close to 1 and most 95% CIs cross the ver
 
 
 
+## Problem 2
+
+```{r load packages}
+library(p8105.datasets)
+data("weather_df")
+```
+
+
+```{r calculation}
+set.seed(1)
+
+n_bootstrap <- 5000
+
+boot_results <- 
+  tibble(rep = 1:n_bootstrap) %>%
+  mutate(
+    sample = map(rep, ~ sample_n(weather_df, size = nrow(weather_df), replace = TRUE)),
+    model = map(sample, ~ lm(tmax ~ tmin + prcp, data = .x)),
+    glance_output = map(model, glance),
+    tidy_output = map(model, tidy),
+    r_squared = map_dbl(glance_output, "r.squared"),
+    beta1 = map_dbl(tidy_output, ~ .x$estimate[.x$term == "tmin"]),
+    beta2 = map_dbl(tidy_output, ~ .x$estimate[.x$term == "prcp"]),
+    beta_ratio = beta1 / beta2
+  ) %>%
+  select(rep, r_squared, beta_ratio)
+
+# Calculate 95% confidence intervals
+ci_r_squared <- quantile(boot_results$r_squared, c(0.025, 0.975))
+ci_beta_ratio <- quantile(boot_results$beta_ratio, c(0.025, 0.975))
+
+ci_r_squared
+ci_beta_ratio
+```
+
+
+```{r distribution plots}
+# Create plot for R-squared distribution
+plot_r_squared <- boot_results %>%
+  ggplot(aes(x = r_squared)) +
+  geom_density(fill = "purple", alpha=0.5) +
+  labs(
+    title = "Bootstrap Distribution of R²",
+    x = "R²",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Create plot for beta ratio distribution
+plot_beta_ratio <- boot_results %>%
+  ggplot(aes(x = beta_ratio)) +
+  geom_density(bins = 40, fill = "blue", alpha=0.5)  +
+  labs(
+    title = "Bootstrap Distribution of β1 / β2",
+    x = "β1 / β2 (tmin coefficient / prcp coefficient)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+plot_r_squared
+plot_beta_ratio
+```
+
+From the plots, we could observe that the bootstrap distribution of R² is approximately normal with a slight left skew, centered around 0.94, which indicates the model consistently explains a high proportion of variance in the data. In contrast, the distribution of the ratio β1 / β2 is heavily left-skewed with a significant tail extending toward more negative values; this asymmetry suggests instability in the estimate, likely caused by the denominator which is β2 the precipitation coefficient, being very close to zero in certain bootstrap samples, inflating the ratio.
 
 
 
+## Problem 3
 
+```{r import dataset}
+birthweight_raw = read_csv("data/birthweight.csv") |> 
+  clean_names()
+```
 
 
 
